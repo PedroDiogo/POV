@@ -1,0 +1,9 @@
+[submodule "PCB/Libraries/Adafruit"]
+	path = PCB/Libraries/Adafruit
+	url = https://github.com/adafruit/Adafruit-Eagle-Library
+[submodule "PCB/Libraries/SparkFun"]
+	path = PCB/Libraries/SparkFun
+	url = https://github.com/sparkfun/SparkFun-Eagle-Library
+[submodule "PCB/Libraries/PedroDiogo"]
+	path = PCB/Libraries/PedroDiogo
+	url = https://github.com/PedroDiogo/EagleLib
