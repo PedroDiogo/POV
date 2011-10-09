@@ -94,6 +94,7 @@
     #define CLOCK_FREQ 48000000
     #define GetSystemClock() CLOCK_FREQ
     #define MESSAGE_LENGTH 16
+    #define MESSAGE_DEFAULT "OLA!\0"
     
     /** LED ************************************************************/
     #define LED1 LATCbits.LATC5

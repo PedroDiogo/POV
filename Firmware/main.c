@@ -93,6 +93,7 @@ char uart_dtr_placeholder;
 #include "USB/usb.h"
 
 #include "HardwareProfile.h"
+#include "eeprom.h"
 #include <string.h>
 
 /** V A R I A B L E S ********************************************************/
@@ -109,9 +110,11 @@ unsigned char RS232_Out_Data_Rdy = 0;
 USB_HANDLE  lastTransmission;
 
 // User variables
-char message[MESSAGE_LENGTH];
+char message[MESSAGE_LENGTH+1];
 BOOL clearRS232Buffer;
 enum states {P_VERSION, P_PROMPT, P_INPUT} nextProcessState;
+
+char length, eeprom_crc, eeprom_message[MESSAGE_LENGTH+1];
 
 //BOOL stringPrinted;
 
@@ -395,7 +398,47 @@ void main(void)
      					//variables to known states.
  }//end InitializeSystem
 
+/******************************************************************************
+ * Function:        void ReadMessageFromEEPROM(void)
+ *
+ * PreCondition:    None
+ *
+ * Input:           None
+ *
+ * Output:          None
+ *
+ * Side Effects:    None
+ *
+ * Overview:        This function will save a store message from the EEPROM 
+ *                  to memory. If no valid message is on EEPROM, save a 
+ *                  default one.
+ *
+ * Note:            
+ *
+ *****************************************************************************/
+void ReadMessageFromEEPROM()
+{    
+    eeprom_crc = readEEPROM(0x00);
+    length = readEEPROM(0x01);
 
+     // Se o CRC do comprimento da mensagem for incorrecto, n‹o se faz load da mensagem
+    if (crc(0,length) != eeprom_crc)
+        strcpypgm2ram(message, MESSAGE_DEFAULT);
+    else
+    {
+        LED2 = 1;
+        eeprom_crc = readEEPROM(0x02);
+        readStrEEPROM(0x03, length, eeprom_message);
+        eeprom_message[length] = '\0';
+        if (strcrc(eeprom_message) != eeprom_crc)
+            strcpypgm2ram(message, MESSAGE_DEFAULT);
+        else
+        {
+            strcpy(message, eeprom_message);
+            LED3 = 1;
+        }
+    }    
+}
 
 /******************************************************************************
  * Function:        void UserInit(void)
@@ -417,20 +460,23 @@ void main(void)
 void UserInit(void)
 {
 	unsigned char i;
-    // InitializeUSART();
+    
+    initLEDs();
 
-// 	 Initialize the arrays
+    // 	 Initialize the arrays
 	for (i=0; i<sizeof(USB_Out_Buffer); i++)
     {
 		USB_Out_Buffer[i] = 0;
     }
-    strcpypgm2ram(message, "MEEC!");
+    
+    ReadMessageFromEEPROM();
 
 	NextUSBOut = 0;
 	LastRS232Out = 0;
 	lastTransmission = 0;
+	nextProcessState = P_VERSION;
+	RS232cp = 0;
 
-	initLEDs();
 }//end UserInit
 
 /******************************************************************************
@@ -529,58 +575,42 @@ void ProcessMenu(void)
 	// Strip the CR/NL character.
 	RS232_Out_Data[RS232cp] = '\0';
 	
-    // RS232_Out_Data[RS232cp] = '"';
-    // RS232_Out_Data[RS232cp+1] = '\0';
-    // putsUSBUSART(RS232_Out_Data);
-    // CDCTxService();
-		
-	// Convert input string to lowercase
-    // for(i=0;i<8;i++)
-    //  RS232_Out_Data[i] = tolower(RS232_Out_Data[i]);
-			
 	// Test different menu options
 	if(strcmpram2pgm("help", RS232_Out_Data) == 0)
 		putrsUSBUSART("\r\nAvailable commands:\r\n\r\n* help - Displays this message, recursive style!\r\n* setMessage <text> - Defines a new message to be displayed on the POV.\r\n* showMessage - Shows the current message\r\n* version - Displays firmware version.");
-		
-	else if(strncmpram2pgm("setmessage ", RS232_Out_Data, 10) == 0)
+	else if(strcmpram2pgm("debug0", RS232_Out_Data) == 0)
+	{
+        sprintf(RS232_Out_Data, "\r\nCRC: 0x%X, Length: 0x%X\r\n", eeprom_crc, length);
+        putsUSBUSART(RS232_Out_Data);
+	}
+	else if(strcmpram2pgm("debug1", RS232_Out_Data) == 0)
+	{
+        sprintf(RS232_Out_Data, "\r\nMessage:'%s'\r\n", eeprom_message);
+        putsUSBUSART(RS232_Out_Data);
+	}
+	else if(strncmpram2pgm("setMessage ", RS232_Out_Data, 10) == 0)
 	{				
 		// Copy message
-		strcpy(message, &RS232_Out_Data[11]);
-        // writeEEPROM(0x00, crc(0x00, (char) strlen(message)));
-        // writeEEPROM(0x01, (char) strlen(message));
-        // writeStrEEPROM(0x03, strlen(message), message);
-        // writeEEPROM(0x02, strcrc(message));
-        
-		
-		// Display confirmation
-		strcpypgm2ram(RS232_Out_Data, "\r\nYour message is now defined as:\r\n\t");
-		strcat(RS232_Out_Data, message);		
+        strncpy(message, &RS232_Out_Data[11], MESSAGE_LENGTH);
+        message[MESSAGE_LENGTH] = '\0';
+        writeEEPROM(0x00, crc(0x00, (char) strlen(message)));
+        writeEEPROM(0x01, (char) strlen(message));
+        writeStrEEPROM(0x03, strlen(message), message);
+        writeEEPROM(0x02, strcrc(message));
 
-        // sprintf(&RS232_Out_Data[strlen(RS232_Out_Data)], "\r\nCRC = 0x%X !", strcrc(message)); // DEBUG!!
-		
-		putsUSBUSART(RS232_Out_Data);
+        // Display confirmation
+        strcpypgm2ram(RS232_Out_Data, "\r\nYour message is now defined as:\r\n\t");
+        strcat(RS232_Out_Data, message);
+
+        putsUSBUSART(RS232_Out_Data);
 	}
-	else if(strcmpram2pgm("showmessage", RS232_Out_Data) == 0)
+	else if(strcmpram2pgm("showMessage", RS232_Out_Data) == 0)
 	{
-		strcpypgm2ram(RS232_Out_Data, "\r\nYour message is defined as:\r\n\t");
-		strcat(RS232_Out_Data, message);
+		sprintf(RS232_Out_Data, "\r\nYour message is defined as:\r\n\t%s", message);
 		putsUSBUSART(RS232_Out_Data);
 	}
 	else if(strcmpram2pgm("version", RS232_Out_Data) == 0)
 		putrsUSBUSART("\r\nPOV serial configuration. Version 0.1.");
-    // else if(strncmpram2pgm("write ", RS232_Out_Data, 6) == 0)
-    // {
-    //  writeStrEEPROM(0x00, strlen(&RS232_Out_Data[6]), &RS232_Out_Data[6]);
-    //  putrsUSBUSART("\r\nValue written to EEPROM! YEEE!!!");
-    // }
-    // else if(strcmpram2pgm("read", RS232_Out_Data) == 0)
-    // {
-    //  strcpypgm2ram(RS232_Out_Data, "\r\nEEPROM value is defined as:\r\n\t");
-    //  sprintf(&RS232_Out_Data[strlen(RS232_Out_Data)], "\r\nEEPROM = ");
-    //  readStrEEPROM(0x00, strlen(message) + 3, &RS232_Out_Data[strlen(RS232_Out_Data)]);
-    //  
-    //  putsUSBUSART(RS232_Out_Data);
-    // }
 	else
 		putrsUSBUSART("\r\nUnknown command. Type 'help' for the list of available commands.");
 	
