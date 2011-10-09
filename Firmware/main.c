@@ -117,7 +117,6 @@ char message[MESSAGE_LENGTH+1];
 BOOL clearRS232Buffer;
 enum states {P_VERSION, P_PROMPT, P_INPUT} nextProcessState;
 
-char length, eeprom_crc, eeprom_message[MESSAGE_LENGTH+1];
 unsigned int space, POV_curPos, POV_curLetter;
 
 //BOOL stringPrinted;
@@ -130,11 +129,8 @@ void USBDeviceTasks(void);
 void YourHighPriorityISRCode();
 void YourLowPriorityISRCode();
 void USBCBSendResume(void);
-void BlinkUSBStatus(void);
 void UserInit(void);
-void InitializeUSART(void);
-void putcUSART(char c);
-unsigned char getcUSART ();
+void ReadMessageFromEEPROM();
 
 /** VECTOR REMAPPING ***********************************************/
 #if defined(__18CXX)
@@ -427,7 +423,9 @@ void main(void)
  *
  *****************************************************************************/
 void ReadMessageFromEEPROM()
-{    
+{
+    char length, eeprom_crc, eeprom_message[MESSAGE_LENGTH+1];
+        
     eeprom_crc = readEEPROM(0x00);
     length = readEEPROM(0x01);
 
@@ -436,17 +434,13 @@ void ReadMessageFromEEPROM()
         strcpypgm2ram(message, MESSAGE_DEFAULT);
     else
     {
-        LED2 = 1;
         eeprom_crc = readEEPROM(0x02);
         readStrEEPROM(0x03, length, eeprom_message);
         eeprom_message[length] = '\0';
         if (strcrc(eeprom_message) != eeprom_crc)
             strcpypgm2ram(message, MESSAGE_DEFAULT);
         else
-        {
             strcpy(message, eeprom_message);
-            LED3 = 1;
-        }
     }    
 }
 
@@ -597,16 +591,6 @@ void ProcessMenu(void)
 	// Test different menu options
 	if(strcmpram2pgm("help", RS232_Out_Data) == 0)
 		putrsUSBUSART("\r\nAvailable commands:\r\n\r\n* help - Displays this message, recursive style!\r\n* setMessage <text> - Defines a new message to be displayed on the POV.\r\n* showMessage - Shows the current message\r\n* version - Displays firmware version.");
-	else if(strcmpram2pgm("debug0", RS232_Out_Data) == 0)
-	{
-        sprintf(RS232_Out_Data, "\r\nCRC: 0x%X, Length: 0x%X\r\n", eeprom_crc, length);
-        putsUSBUSART(RS232_Out_Data);
-	}
-	else if(strcmpram2pgm("debug1", RS232_Out_Data) == 0)
-	{
-        sprintf(RS232_Out_Data, "\r\nMessage:'%s'\r\n", eeprom_message);
-        putsUSBUSART(RS232_Out_Data);
-	}
 	else if(strncmpram2pgm("setMessage ", RS232_Out_Data, 10) == 0)
 	{				
 		// Copy message
@@ -629,7 +613,7 @@ void ProcessMenu(void)
 		putsUSBUSART(RS232_Out_Data);
 	}
 	else if(strcmpram2pgm("version", RS232_Out_Data) == 0)
-		putrsUSBUSART("\r\nPOV serial configuration. Version 0.1.");
+		putrsUSBUSART("\r\nPOV serial configuration. Version 0.9");
 	else
 		putrsUSBUSART("\r\nUnknown command. Type 'help' for the list of available commands.");
 	
@@ -666,10 +650,11 @@ void ProcessIO(void)
 	// Print welcome message
 	if(USBUSARTIsTxTrfReady() && (UART_DTR == 1))
 	{
+        setLEDs(0);
 	    // Print Version
 	    if(nextProcessState == P_VERSION)
     	{
-    		putrsUSBUSART("\r\n POV serial configuration. Version 0.1\r\n\r\n\ttype 'help' for the list of available commands.\r\n");
+    		putrsUSBUSART("\r\n POV serial configuration. Version 0.9\r\n\r\n\ttype 'help' for the list of available commands.\r\n");
     		nextProcessState = P_PROMPT;
     	}
     	// Print Prompt
@@ -714,98 +699,6 @@ void ProcessIO(void)
 		clearRS232Buffer = 0;
 	}
 }		//end ProcessIO
-
-/********************************************************************
- * Function:        void BlinkUSBStatus(void)
- *
- * PreCondition:    None
- *
- * Input:           None
- *
- * Output:          None
- *
- * Side Effects:    None
- *
- * Overview:        BlinkUSBStatus turns on and off LEDs 
- *                  corresponding to the USB device state.
- *
- * Note:            mLED macros can be found in HardwareProfile.h
- *                  USBDeviceState is declared and updated in
- *                  usb_device.c.
- *******************************************************************/
-#if 0
-void BlinkUSBStatus(void)
-{
-    static WORD led_count=0;
-    
-    if(led_count == 0)led_count = 10000U;
-    led_count--;
-
-    #define mLED_Both_Off()         {mLED_1_Off();mLED_2_Off();}
-    #define mLED_Both_On()          {mLED_1_On();mLED_2_On();}
-    #define mLED_Only_1_On()        {mLED_1_On();mLED_2_Off();}
-    #define mLED_Only_2_On()        {mLED_1_Off();mLED_2_On();}
-
-    if(USBSuspendControl == 1)
-    {
-        if(led_count==0)
-        {
-            mLED_1_Toggle();
-            if(mGetLED_1())
-            {
-                mLED_2_On();
-            }
-            else
-            {
-                mLED_2_Off();
-            }
-        }//end if
-    }
-    else
-    {
-        if(USBDeviceState == DETACHED_STATE)
-        {
-            mLED_Both_Off();
-        }
-        else if(USBDeviceState == ATTACHED_STATE)
-        {
-            mLED_Both_On();
-        }
-        else if(USBDeviceState == POWERED_STATE)
-        {
-            mLED_Only_1_On();
-        }
-        else if(USBDeviceState == DEFAULT_STATE)
-        {
-            mLED_Only_2_On();
-        }
-        else if(USBDeviceState == ADDRESS_STATE)
-        {
-            if(led_count == 0)
-            {
-                mLED_1_Toggle();
-                mLED_2_Off();
-            }//end if
-        }
-        else if(USBDeviceState == CONFIGURED_STATE)
-        {
-            if(led_count==0)
-            {
-                mLED_1_Toggle();
-                if(mGetLED_1())
-                {
-                    mLED_2_Off();
-                }
-                else
-                {
-                    mLED_2_On();
-                }
-            }//end if
-        }//end if(...)
-    }//end if(UCONbits.SUSPND...)
-
-}//end BlinkUSBStatus
-#endif
 
 // ******************************************************************************************************
 // ************** USB Callback Functions ****************************************************************

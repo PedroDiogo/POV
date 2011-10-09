@@ -43,7 +43,10 @@ void POVRoutine(void)
 	if (space == 0)
 	{
 		// Increment pointer position
-		ptr += 5*message[POV_curLetter]-0xA0 + POV_curPos; // = 5*(message[curLetter] - 0x20) + curPos
+        for(i=0;i<5;i++)
+            ptr += message[POV_curLetter]-0x20;
+        ptr += POV_curPos;
+
 		setLEDs(*ptr);
 		POV_curPos++;
 	}
