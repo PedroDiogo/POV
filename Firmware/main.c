@@ -65,7 +65,7 @@ char uart_dtr_placeholder;
 //        #pragma config VREGEN = ON
         #pragma config WDTEN  = OFF
         #pragma config WDTPS  = 32768
-        #pragma config MCLRE  = OFF
+        #pragma config MCLRE  = ON
         #pragma config HFOFST = OFF
         #pragma config STVREN = ON
         #pragma config LVP    = OFF
@@ -94,7 +94,10 @@ char uart_dtr_placeholder;
 
 #include "HardwareProfile.h"
 #include "eeprom.h"
+#include "pov.h"
 #include <string.h>
+#include <timers.h>
+#include <p18f14k50.h>
 
 /** V A R I A B L E S ********************************************************/
 #pragma udata
@@ -115,6 +118,7 @@ BOOL clearRS232Buffer;
 enum states {P_VERSION, P_PROMPT, P_INPUT} nextProcessState;
 
 char length, eeprom_crc, eeprom_message[MESSAGE_LENGTH+1];
+unsigned int space, POV_curPos, POV_curLetter;
 
 //BOOL stringPrinted;
 
@@ -224,6 +228,13 @@ unsigned char getcUSART ();
 	    #if defined(USB_INTERRUPT)
 	        USBDeviceTasks();
         #endif
+        
+        if(INTCONbits.TMR0IF == 1)
+        {
+            INTCONbits.TMR0IF = 0;
+            WriteTimer0(POV_TIMER);
+            POVRoutine();
+        }
 	
 	}	//This return will be a "retfie fast", since this is in a #pragma interrupt section 
 	#pragma interruptlow YourLowPriorityISRCode
@@ -269,8 +280,7 @@ void main(void)
         #endif
        	// Application-specific tasks.
 		// Application related code may be added here, or in the ProcessIO() function.
-        ProcessIO();        
-        LED1 = UART_DTR;
+        ProcessIO();
     }//end while
 }//end main
 
@@ -471,11 +481,20 @@ void UserInit(void)
     
     ReadMessageFromEEPROM();
 
+    testLEDs();
+    
 	NextUSBOut = 0;
 	LastRS232Out = 0;
 	lastTransmission = 0;
 	nextProcessState = P_VERSION;
 	RS232cp = 0;
+	// POV
+	space = 0;
+	POV_curPos = 0;
+	POV_curLetter = 0;
+	
+	OpenTimer0(TIMER_INT_ON & T0_8BIT & T0_SOURCE_INT & T0_PS_1_256);
+    WriteTimer0(POV_TIMER);
 
 }//end UserInit
 
